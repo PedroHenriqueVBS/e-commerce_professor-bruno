@@ -6,6 +6,8 @@ import { Modal } from '../components/Modal';
 import { Alert } from '../components/Alert';
 import { mockProducts } from '../const/products';
 import type { Product } from '../const/products';
+import api from '../services/api';
+import type { Promotion } from '../types/Promotions';
 
 export const Products: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -31,6 +33,27 @@ export const Products: React.FC = () => {
     setFilteredProducts(mockProducts);
   }, []);
 
+  // Promotions state and fetch
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+
+  const fetchPromotions = async () => {
+    try {
+      const data = await api.get('/promotions');
+      // api.get returns parsed JSON (array)
+      setPromotions(Array.isArray(data) ? data : []);
+    } catch (error) {
+      // ignore errors here (server may be down during dev)
+      console.error('Error fetching promotions in Products:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchPromotions();
+    // refresh promotions when window/tab regains focus
+    window.addEventListener('focus', fetchPromotions);
+    return () => window.removeEventListener('focus', fetchPromotions);
+  }, []);
+
   // Filtrar produtos
   useEffect(() => {
     let filtered = products;
@@ -50,6 +73,18 @@ export const Products: React.FC = () => {
 
     setFilteredProducts(filtered);
   }, [searchTerm, selectedCategory, products]);
+
+  // Derived products with applied promotion (if any)
+  const productsWithPromotions = filteredProducts.map(p => {
+    // find promotions that apply: either specific product_id or global (null)
+    const applicable = promotions.filter(pr => pr.product_id === p.id || pr.product_id === null);
+    if (applicable.length === 0) return { product: p, promotion: undefined, discountedPrice: undefined };
+
+    // choose the highest discount among applicable promotions
+    const best = applicable.reduce((acc, cur) => (cur.discount > acc.discount ? cur : acc), applicable[0]);
+    const discountedPrice = +(p.price * (1 - best.discount / 100)).toFixed(2);
+    return { product: p, promotion: best, discountedPrice };
+  });
 
   // Obter categorias únicas
   const categories = Array.from(new Set(products.map(p => p.category)));
@@ -225,27 +260,41 @@ export const Products: React.FC = () => {
 
       {/* Lista de Produtos */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredProducts.map(product => (
+        {productsWithPromotions.map(({ product, promotion, discountedPrice }) => (
           <Card key={product.id} hoverable>
-            {product.image && (
-              <img
-                src={product.image}
-                alt={product.name}
-                className="w-full h-48 object-cover rounded-t-lg mb-4"
-              />
-            )}
-            
+            <div className="relative">
+              {product.image && (
+                <img
+                  src={product.image}
+                  alt={product.name}
+                  className="w-full h-48 object-cover rounded-t-lg mb-4"
+                  loading="lazy"
+                  onError={(e) => {
+                    const target = e.currentTarget as HTMLImageElement;
+                    target.onerror = null;
+                    target.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='200'><rect width='100%25' height='100%25' fill='%23e5e7eb'/><text x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%236b7280' font-family='Arial' font-size='18'>No%20image</text></svg>";
+                  }}
+                />
+              )}
+
+              {promotion && (
+                <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-semibold px-2 py-1 rounded">
+                  {promotion.discount}% OFF
+                </span>
+              )}
+            </div>
+
             <div className="space-y-2">
               <div className="flex items-start justify-between">
                 <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">
                   {product.name}
                 </h3>
               </div>
-              
+
               <p className="text-sm text-gray-600 line-clamp-2">
                 {product.description}
               </p>
-              
+
               <div className="flex items-center justify-between pt-2">
                 <span className="text-xs font-medium px-2 py-1 bg-blue-100 text-blue-800 rounded">
                   {product.category}
@@ -258,13 +307,18 @@ export const Products: React.FC = () => {
                   Estoque: {product.stock}
                 </span>
               </div>
-              
+
               <div className="pt-2 border-t">
-                <p className="text-2xl font-bold text-gray-900">
-                  {formatPrice(product.price)}
-                </p>
+                {discountedPrice ? (
+                  <div>
+                    <p className="text-sm text-gray-500 line-through">{formatPrice(product.price)}</p>
+                    <p className="text-2xl font-bold text-green-600">{formatPrice(discountedPrice)}</p>
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-gray-900">{formatPrice(product.price)}</p>
+                )}
               </div>
-              
+
               <div className="flex gap-2 pt-2">
                 <Button
                   size="small"
