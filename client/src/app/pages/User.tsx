@@ -1,10 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card } from '../components/Card';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/Button';
+import { useUsers } from '../hooks/useUser';
 
 export const User: React.FC = () => {
   const { user } = useAuth();
+  const { users, addUser, deleteUser, loading } = useUsers();
+
+  const [newUser, setNewUser] = useState({ name: '', email: '' });
+
+  const handleAdd = async () => {
+    if (!newUser.name || !newUser.email) return;
+    await addUser(newUser);
+    setNewUser({ name: '', email: '' });
+  };
 
   return (
     <>
@@ -46,12 +56,53 @@ export const User: React.FC = () => {
               </label>
               <p className="text-lg text-gray-900">#{user?.id}</p>
             </div>
-
-            <div className="pt-4">
-              <Button variant="primary">Editar Perfil</Button>
-            </div>
           </div>
         </Card>
+
+        {/* CRUD de usuários */}
+        <div className="mt-8">
+          <h3 className="text-xl font-semibold mb-3">Usuários cadastrados</h3>
+          {loading ? (
+            <p>Carregando...</p>
+          ) : (
+            <ul className="space-y-2">
+              {users.map((u) => (
+                <li
+                  key={u.id}
+                  className="flex justify-between items-center border p-3 rounded-lg"
+                >
+                  <span>
+                    <strong>{u.name}</strong> — {u.email}
+                  </span>
+                  <Button variant="danger" onClick={() => deleteUser(u.id)}>
+                    Remover
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="mt-6 border-t pt-4">
+            <h4 className="font-medium mb-2">Adicionar novo usuário</h4>
+            <input
+              type="text"
+              placeholder="Nome"
+              className="border rounded p-2 w-full mb-2"
+              value={newUser.name}
+              onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+            />
+            <input
+              type="email"
+              placeholder="E-mail"
+              className="border rounded p-2 w-full mb-2"
+              value={newUser.email}
+              onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+            />
+            <Button variant="primary" onClick={handleAdd}>
+              Adicionar Usuário
+            </Button>
+          </div>
+        </div>
       </div>
     </>
   );

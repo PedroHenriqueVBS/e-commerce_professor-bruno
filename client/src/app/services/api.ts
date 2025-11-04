@@ -22,7 +22,7 @@ async function fetchWithAuth(endpoint: string, options: RequestOptions = {}) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }
 
-  // Only try to parse JSON if there's content
+  // Só tenta converter em JSON se houver conteúdo
   const contentType = response.headers.get('content-type');
   if (contentType && contentType.includes('application/json')) {
     return response.json();
@@ -33,15 +33,23 @@ async function fetchWithAuth(endpoint: string, options: RequestOptions = {}) {
 
 export const api = {
   get: (endpoint: string) => fetchWithAuth(endpoint),
-  
-  post: (endpoint: string, data: any) => fetchWithAuth(endpoint, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-  
-  delete: (endpoint: string) => fetchWithAuth(endpoint, {
-    method: 'DELETE',
-  }),
+
+  post: (endpoint: string, data: any) =>
+    fetchWithAuth(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  put: (endpoint: string, data: any) =>
+    fetchWithAuth(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (endpoint: string) =>
+    fetchWithAuth(endpoint, {
+      method: 'DELETE',
+    }),
 };
 
 export default api;
