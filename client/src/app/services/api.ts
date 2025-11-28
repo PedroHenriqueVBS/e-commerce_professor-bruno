@@ -19,7 +19,15 @@ async function fetchWithAuth(endpoint: string, options: RequestOptions = {}) {
   });
 
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    // tenta extrair mensagem do servidor, senão retorna status
+    let errorMessage = `HTTP error! status: ${response.status}`;
+    try {
+      const data = await response.json();
+      if (data?.message) errorMessage = data.message;
+    } catch {
+      // não faz nada, mantém a mensagem padrão
+    }
+    throw new Error(errorMessage);
   }
 
   // Só tenta converter em JSON se houver conteúdo

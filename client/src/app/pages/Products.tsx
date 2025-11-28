@@ -4,9 +4,8 @@ import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { Modal } from '../components/Modal';
 import { Alert } from '../components/Alert';
-import { mockProducts } from '../const/products';
-import type { Product } from '../const/products';
 import api from '../services/api';
+import type { Product } from '../const/products';
 import type { Promotion } from '../types/Promotions';
 
 export const Products: React.FC = () => {
@@ -17,8 +16,7 @@ export const Products: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [alert, setAlert] = useState<{ type: 'success' | 'error' | 'warning' | 'info'; message: string } | null>(null);
-  
-  // Form state
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -27,87 +25,75 @@ export const Products: React.FC = () => {
     stock: '',
   });
 
-  // Carregar produtos mockados
-  useEffect(() => {
-    setProducts(mockProducts);
-    setFilteredProducts(mockProducts);
-  }, []);
-
-  // Promotions state and fetch
   const [promotions, setPromotions] = useState<Promotion[]>([]);
+
+  const fetchProducts = async () => {
+    try {
+      const data: Product[] = await api.get('/products');
+      setProducts(data || []);
+      setFilteredProducts(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar produtos:', error);
+    }
+  };
 
   const fetchPromotions = async () => {
     try {
-      const data = await api.get('/promotions');
-      // api.get returns parsed JSON (array)
+      const data: Promotion[] = await api.get('/promotions');
       setPromotions(Array.isArray(data) ? data : []);
     } catch (error) {
-      // ignore errors here (server may be down during dev)
-      console.error('Error fetching promotions in Products:', error);
+      console.error('Erro ao carregar promoções:', error);
     }
   };
 
   useEffect(() => {
+    fetchProducts();
     fetchPromotions();
-    // refresh promotions when window/tab regains focus
-    window.addEventListener('focus', fetchPromotions);
-    return () => window.removeEventListener('focus', fetchPromotions);
+
+    const handleFocus = () => {
+      fetchProducts();
+      fetchPromotions();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
-  // Filtrar produtos
   useEffect(() => {
     let filtered = products;
-
-    // Filtro por categoria
-    if (selectedCategory !== 'all') {
-      filtered = filtered.filter(p => p.category === selectedCategory);
-    }
-
-    // Filtro por busca
+    if (selectedCategory !== 'all') filtered = filtered.filter(p => p.category === selectedCategory);
     if (searchTerm) {
       filtered = filtered.filter(p =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.description.toLowerCase().includes(searchTerm.toLowerCase())
+        (p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
+        (p.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false)
       );
     }
-
     setFilteredProducts(filtered);
   }, [searchTerm, selectedCategory, products]);
 
-  // Derived products with applied promotion (if any)
   const productsWithPromotions = filteredProducts.map(p => {
-    // find promotions that apply: either specific product_id or global (null)
     const applicable = promotions.filter(pr => pr.product_id === p.id || pr.product_id === null);
     if (applicable.length === 0) return { product: p, promotion: undefined, discountedPrice: undefined };
 
-    // choose the highest discount among applicable promotions
     const best = applicable.reduce((acc, cur) => (cur.discount > acc.discount ? cur : acc), applicable[0]);
-    const discountedPrice = +(p.price * (1 - best.discount / 100)).toFixed(2);
+    const discountedPrice = p.price ? +(p.price * (1 - best.discount / 100)).toFixed(2) : undefined;
     return { product: p, promotion: best, discountedPrice };
   });
 
-  // Obter categorias únicas
-  const categories = Array.from(new Set(products.map(p => p.category)));
+  const categories = Array.from(new Set(products.map(p => p.category || 'Sem categoria')));
 
   const handleOpenModal = (product?: Product) => {
     if (product) {
       setSelectedProduct(product);
       setFormData({
-        name: product.name,
-        description: product.description,
-        price: product.price.toString(),
-        category: product.category,
-        stock: product.stock.toString(),
+        name: product.name ?? '',
+        description: product.description ?? '',
+        price: product.price?.toString() ?? '',
+        category: product.category ?? '',
+        stock: product.stock?.toString() ?? '0',
       });
     } else {
       setSelectedProduct(null);
-      setFormData({
-        name: '',
-        description: '',
-        price: '',
-        category: '',
-        stock: '',
-      });
+      setFormData({ name: '', description: '', price: '', category: '', stock: '' });
     }
     setIsModalOpen(true);
   };
@@ -115,16 +101,10 @@ export const Products: React.FC = () => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedProduct(null);
-    setFormData({
-      name: '',
-      description: '',
-      price: '',
-      category: '',
-      stock: '',
-    });
+    setFormData({ name: '', description: '', price: '', category: '', stock: '' });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.name || !formData.price || !formData.category) {
@@ -132,8 +112,7 @@ export const Products: React.FC = () => {
       return;
     }
 
-    const newProduct: Product = {
-      id: selectedProduct ? selectedProduct.id : products.length + 1,
+    const productData = {
       name: formData.name,
       description: formData.description,
       price: parseFloat(formData.price),
@@ -143,55 +122,55 @@ export const Products: React.FC = () => {
       createdAt: new Date().toISOString().split('T')[0],
     };
 
-    if (selectedProduct) {
-      // Atualizar produto
-      setProducts(products.map(p => p.id === selectedProduct.id ? newProduct : p));
-      setAlert({ type: 'success', message: 'Produto atualizado com sucesso!' });
-    } else {
-      // Adicionar novo produto
-      setProducts([...products, newProduct]);
-      setAlert({ type: 'success', message: 'Produto adicionado com sucesso!' });
+    try {
+      if (selectedProduct) {
+        const updated = await api.put(`/products/${selectedProduct.id}`, productData);
+        setProducts(products.map(p => p.id === selectedProduct.id ? updated : p));
+        setAlert({ type: 'success', message: 'Produto atualizado com sucesso!' });
+      } else {
+        const created = await api.post('/products', productData);
+        setProducts([...products, created]);
+        setAlert({ type: 'success', message: 'Produto adicionado com sucesso!' });
+      }
+    } catch (error) {
+      console.error('Erro ao salvar produto:', error);
+      setAlert({ type: 'error', message: 'Erro ao salvar produto no banco!' });
     }
 
     handleCloseModal();
     setTimeout(() => setAlert(null), 3000);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('Tem certeza que deseja excluir este produto?')) {
-      setProducts(products.filter(p => p.id !== id));
-      setAlert({ type: 'success', message: 'Produto excluído com sucesso!' });
+      try {
+        await api.delete(`/products/${id}`);
+        setProducts(products.filter(p => p.id !== id));
+        setAlert({ type: 'success', message: 'Produto excluído com sucesso!' });
+      } catch (error) {
+        console.error('Erro ao deletar produto:', error);
+        setAlert({ type: 'error', message: 'Erro ao deletar produto no banco!' });
+      }
       setTimeout(() => setAlert(null), 3000);
     }
   };
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(price);
-  };
+  const formatPrice = (price: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(price);
 
   return (
     <>
-      {/* Alert */}
       {alert && (
         <div className="mb-4">
-          <Alert
-            type={alert.type}
-            message={alert.message}
-            onClose={() => setAlert(null)}
-          />
+          <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />
         </div>
       )}
 
-      {/* Cabeçalho da página */}
       <div className="mb-6">
         <h2 className="text-3xl font-bold text-gray-900 mb-2">Gestão de Produtos</h2>
         <p className="text-gray-600">Gerencie o catálogo de produtos da sua loja</p>
       </div>
 
-      {/* Filtros e Ações */}
       <Card className="mb-6">
         <div className="flex flex-col md:flex-row gap-4 items-end">
           <div className="flex-1">
@@ -203,30 +182,21 @@ export const Products: React.FC = () => {
               fullWidth
             />
           </div>
-          
           <div className="w-full md:w-48">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Categoria
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">Todas</option>
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
+              {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
             </select>
           </div>
-
-          <Button onClick={() => handleOpenModal()} variant="primary">
-            + Novo Produto
-          </Button>
+          <Button onClick={() => handleOpenModal()} variant="primary">+ Novo Produto</Button>
         </div>
       </Card>
 
-      {/* Estatísticas */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <Card>
           <div className="text-center">
@@ -243,22 +213,19 @@ export const Products: React.FC = () => {
         <Card>
           <div className="text-center">
             <p className="text-gray-500 text-sm">Estoque Total</p>
-            <p className="text-3xl font-bold text-gray-900">
-              {products.reduce((sum, p) => sum + p.stock, 0)}
-            </p>
+            <p className="text-3xl font-bold text-gray-900">{products.reduce((sum, p) => sum + (p.stock || 0), 0)}</p>
           </div>
         </Card>
         <Card>
           <div className="text-center">
             <p className="text-gray-500 text-sm">Valor Total</p>
             <p className="text-2xl font-bold text-green-600">
-              {formatPrice(products.reduce((sum, p) => sum + (p.price * p.stock), 0))}
+              {formatPrice(products.reduce((sum, p) => sum + ((p.price || 0) * (p.stock || 0)), 0))}
             </p>
           </div>
         </Card>
       </div>
 
-      {/* Lista de Produtos */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {productsWithPromotions.map(({ product, promotion, discountedPrice }) => (
           <Card key={product.id} hoverable>
@@ -276,7 +243,6 @@ export const Products: React.FC = () => {
                   }}
                 />
               )}
-
               {promotion && (
                 <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-semibold px-2 py-1 rounded">
                   {promotion.discount}% OFF
@@ -285,57 +251,29 @@ export const Products: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-start justify-between">
-                <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">
-                  {product.name}
-                </h3>
-              </div>
-
-              <p className="text-sm text-gray-600 line-clamp-2">
-                {product.description}
-              </p>
-
+              <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">{product.name}</h3>
+              <p className="text-sm text-gray-600 line-clamp-2">{product.description}</p>
               <div className="flex items-center justify-between pt-2">
-                <span className="text-xs font-medium px-2 py-1 bg-blue-100 text-blue-800 rounded">
-                  {product.category}
-                </span>
+                <span className="text-xs font-medium px-2 py-1 bg-blue-100 text-blue-800 rounded">{product.category || 'Sem categoria'}</span>
                 <span className={`text-xs font-medium px-2 py-1 rounded ${
-                  product.stock > 10 ? 'bg-green-100 text-green-800' :
-                  product.stock > 0 ? 'bg-yellow-100 text-yellow-800' :
+                  (product.stock || 0) > 10 ? 'bg-green-100 text-green-800' :
+                  (product.stock || 0) > 0 ? 'bg-yellow-100 text-yellow-800' :
                   'bg-red-100 text-red-800'
-                }`}>
-                  Estoque: {product.stock}
-                </span>
+                }`}>Estoque: {product.stock || 0}</span>
               </div>
-
               <div className="pt-2 border-t">
                 {discountedPrice ? (
                   <div>
-                    <p className="text-sm text-gray-500 line-through">{formatPrice(product.price)}</p>
+                    <p className="text-sm text-gray-500 line-through">{formatPrice(product.price || 0)}</p>
                     <p className="text-2xl font-bold text-green-600">{formatPrice(discountedPrice)}</p>
                   </div>
                 ) : (
-                  <p className="text-2xl font-bold text-gray-900">{formatPrice(product.price)}</p>
+                  <p className="text-2xl font-bold text-gray-900">{formatPrice(product.price || 0)}</p>
                 )}
               </div>
-
               <div className="flex gap-2 pt-2">
-                <Button
-                  size="small"
-                  variant="secondary"
-                  fullWidth
-                  onClick={() => handleOpenModal(product)}
-                >
-                  Editar
-                </Button>
-                <Button
-                  size="small"
-                  variant="danger"
-                  fullWidth
-                  onClick={() => handleDelete(product.id)}
-                >
-                  Excluir
-                </Button>
+                <Button size="small" variant="secondary" fullWidth onClick={() => handleOpenModal(product)}>Editar</Button>
+                <Button size="small" variant="danger" fullWidth onClick={() => handleDelete(product.id)}>Excluir</Button>
               </div>
             </div>
           </Card>
@@ -349,7 +287,6 @@ export const Products: React.FC = () => {
         </Card>
       )}
 
-      {/* Modal de Adicionar/Editar Produto */}
       <Modal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
@@ -357,12 +294,8 @@ export const Products: React.FC = () => {
         size="medium"
         footer={
           <>
-            <Button variant="secondary" onClick={handleCloseModal}>
-              Cancelar
-            </Button>
-            <Button variant="primary" onClick={handleSubmit}>
-              {selectedProduct ? 'Atualizar' : 'Adicionar'}
-            </Button>
+            <Button variant="secondary" onClick={handleCloseModal}>Cancelar</Button>
+            <Button variant="primary" onClick={handleSubmit}>{selectedProduct ? 'Atualizar' : 'Adicionar'}</Button>
           </>
         }
       >
@@ -375,11 +308,8 @@ export const Products: React.FC = () => {
             fullWidth
             required
           />
-          
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Descrição
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
             <textarea
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               rows={3}
@@ -388,7 +318,6 @@ export const Products: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             />
           </div>
-          
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="Preço (R$) *"
@@ -400,7 +329,6 @@ export const Products: React.FC = () => {
               fullWidth
               required
             />
-            
             <Input
               label="Estoque"
               type="number"
@@ -410,11 +338,8 @@ export const Products: React.FC = () => {
               fullWidth
             />
           </div>
-          
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Categoria *
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Categoria *</label>
             <select
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={formData.category}
@@ -422,15 +347,7 @@ export const Products: React.FC = () => {
               required
             >
               <option value="">Selecione uma categoria</option>
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-              <option value="Eletrônicos">Eletrônicos</option>
-              <option value="Periféricos">Periféricos</option>
-              <option value="Monitores">Monitores</option>
-              <option value="Áudio">Áudio</option>
-              <option value="Armazenamento">Armazenamento</option>
-              <option value="Mobília">Mobília</option>
+              {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
             </select>
           </div>
         </form>

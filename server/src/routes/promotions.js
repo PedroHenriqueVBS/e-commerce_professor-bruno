@@ -1,41 +1,52 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const products = require('../data/products');
+const Promotion = require("../models/promotion");
 
-// In-memory promotions store
-let promotions = [];
-let nextId = 1;
-
-// Helper to attach product_name
-function enrichPromotion(promo) {
-  const product = promo.product_id != null ? products.find(p => p.id === promo.product_id) : null;
-  return {
-    ...promo,
-    product_name: product ? product.name : undefined,
-  };
-}
-
-router.get('/', async (req, res) => {
-  const rows = promotions.map(enrichPromotion);
-  res.json(rows);
+// LISTAR
+router.get("/", async (req, res) => {
+  const promos = await Promotion.find().populate("product_id", "name price");
+  res.json(promos);
 });
 
-router.post('/', async (req, res) => {
+// CRIAR
+router.post("/", async (req, res) => {
   const { product_id, discount, start_date, end_date } = req.body;
-  const newPromo = {
-    id: nextId++,
-    product_id: product_id || null,
-    discount: Number(discount) || 0,
-    start_date: start_date || null,
-    end_date: end_date || null,
-  };
-  promotions.push(newPromo);
-  res.status(201).json(enrichPromotion(newPromo));
+
+  const promo = await Promotion.create({
+    product_id,
+    discount,
+    start_date,
+    end_date,
+  });
+
+  res.status(201).json(promo);
 });
 
-router.delete('/:id', async (req, res) => {
-  const id = Number(req.params.id);
-  promotions = promotions.filter(p => p.id !== id);
+// UPDATE
+router.put("/:id", async (req, res) => {
+  try {
+    const { product_id, discount, start_date, end_date } = req.body;
+
+    const updated = await Promotion.findByIdAndUpdate(
+      req.params.id,
+      { product_id, discount, start_date, end_date },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ message: "Promoção não encontrada" });
+    }
+
+    res.json(updated);
+
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao atualizar promoção" });
+  }
+});
+
+// DELETE
+router.delete("/:id", async (req, res) => {
+  await Promotion.findByIdAndDelete(req.params.id);
   res.status(204).send();
 });
 

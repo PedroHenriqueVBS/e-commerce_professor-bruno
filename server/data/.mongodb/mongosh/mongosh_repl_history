@@ -1,0 +1,4 @@
+db.products.find()
+db.product.find()
+use ecommerce_project
+show dbs
